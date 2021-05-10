@@ -1,0 +1,11 @@
+0:歪度の絶対値0.75以上にlog/get_dummies/GBDT用に欠損値そのまま
+1:欠損値を平均値で埋めた/min_maxより標準化の方が効いたので標準化/tempo_num入れたほうが良さげだった
+2:欠損値を平均値で埋めた/min_maxより標準化の方が効いたので標準化/kNN用にtempoカテゴリなし
+3:欠損値を平均値で埋めた/min_maxより標準化の方が効いたので標準化/tempoカテゴリなし/nanがあるかのカテゴリ追加
+4:3をPCA,n_componentsはmodelによってかえる
+5:各特徴量のカテゴリ(https://towardsdatascience.com/a-music-taste-analysis-using-spotify-api-and-python-e52d186db5fc)に従って作った
+6:5のコピペ、テンポが隠されてる？のでテンポ早い曲は短い？tempo_duration_ms計算
+7:rankdataで標準化
+8:フォーラムに従って集約特徴量作った、フォーラムはgenreだけでgroupbyだった。tempo,popでも試したらpopはちょっと効いた
+9:フォーラムのKNNから作る特徴量、似た感じでK-means、target encodingをregion,tempoにしたけど効かない
+10:KNNの各クラスへのprobの差(をagg)

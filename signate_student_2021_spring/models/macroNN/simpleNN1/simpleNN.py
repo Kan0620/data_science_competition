@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Apr 25 10:07:36 2021
+
+@author: nakaharakan
+"""
+
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import StratifiedKFold as SKF
+from sklearn.metrics import f1_score
+
+data_ver=1
+
+train_path='/Users/nakaharakan/Documents/signate_music/process_data/process_data'+str(data_ver)+'/processed_train'+str(data_ver)+'.csv'
+test_path='/Users/nakaharakan/Documents/signate_music/process_data/process_data'+str(data_ver)+'/processed_test'+str(data_ver)+'.csv'
+
+import torch
+from torch import tensor,LongTensor
+from torch.utils.data import TensorDataset,DataLoader
+from torch.nn import functional as F,Module,Parameter,Linear,Dropout,BatchNorm1d
+from torch.optim import Adam
+
+class simpleNN(Module):
+    
+    def __init__(self,n_in):
+        
+        super(simpleNN,self).__init__()
+        self.fc1=Linear(n_in,16)
+        self.dr1=Dropout(0.3)
+        self.fc2=Linear(16,16)
+        self.bn1=BatchNorm1d(32)
+        self.dr2=Dropout(0.)
+        self.fc3=Linear(16,11)
+        
+    def forward(self,x):
+        
+        x=F.relu(self.fc1(x))
+        
+        #x=self.dr1(x)
+        
+        x=F.relu(self.fc2(x))
+        
+        #x=self.dr2(x)
+        
+        x=F.softmax(self.fc3(x),dim=1)
+        
+        return x
+        
+        
+        
+        
+        
+
+
+
+def stratified_CV_data(n_fold,train_x,train_y):
+    
+    skf=SKF(n_splits=n_fold,random_state=None,shuffle=False)
+    
+    return skf.split(train_x,train_y)
+
+
+def CV2csv(n_fold):
+    
+    preds=np.zeros((4046,11))
+    output_x=np.zeros((4046,11))
+    
+    train_x=pd.read_csv(train_path)
+    test_x=pd.read_csv(test_path)
+    train_y=train_x['genre']
+    
+    del train_x['genre'],train_x['Unnamed: 0'],test_x['Unnamed: 0']
+    
+    train_x=np.array(train_x)
+    test_x=np.array(test_x)
+    train_y=np.array(train_y)
+    
+    test_x=tensor(test_x)
+    
+    
+    
+    val_f=[]
+    
+    for train_index,val_index in stratified_CV_data(n_fold,train_x,train_y):
+        
+        model=simpleNN(train_x.shape[1])
+        
+        optim=Adam(model.parameters(),lr=0.01)
+        
+        
+        
+        tr_x=tensor(train_x[train_index],dtype=float)
+        tr_y=tensor(train_y[train_index])
+        fit_set=TensorDataset(tr_x,tr_y)
+        fit_loader=DataLoader(fit_set,batch_size=128,shuffle=True)
+        
+        val_x=tensor(train_x[val_index],dtype=float)
+        
+        
+        a_model_f=[]
+        
+        
+        for epoch in range(350):
+            
+            
+            
+            model.train()
+                
+            
+            
+            for data,targets in fit_loader:
+                
+                
+                y=model(data.float())
+            
+                f1_score_sum=0
+            
+                pred_index=y.argmax(axis=1)
+            
+                n_loss=0
+        
+                
+                
+                for i in range(11):
+                
+                    pred_True_index=set(torch.where(pred_index==i)[0].tolist())
+                
+                    pred_False_index=set(torch.where(pred_index!=i)[0].tolist())
+                
+                    target_True_index=set(torch.where(targets==i)[0].tolist())
+                
+                    target_False_index=set(torch.where(targets!=i)[0].tolist())
+                
+                    pred_True_target_True_index=tensor(list(pred_True_index & target_True_index))
+                
+                    pred_True_target_False_index=tensor(list(pred_True_index & target_False_index))
+                
+                    pred_False_target_True_index=tensor(list(pred_False_index & target_True_index))
+                
+                    if len(pred_True_target_True_index)!=0:
+                    
+                        n_loss+=1
+                   
+                    
+                        if len(pred_True_target_False_index)==0:
+                        
+                            precision=1
+                        
+                        else:
+                        
+                        
+                            pred_True_target_True=torch.gather(y[:,i].reshape(-1,1),0,pred_True_target_True_index.reshape(-1,1)).sum()
+                                               
+                            pred_True_target_False=torch.gather(y[:,i].reshape(-1,1),0,pred_True_target_False_index.reshape(-1,1)).sum()
+                        
+                            precision=pred_True_target_True/(pred_True_target_True+pred_True_target_False)
+                        
+                        if len(pred_False_target_True_index)==0:
+                        
+                            recall=1
+                        
+                        else:
+                        
+                            pred_True_target_True=torch.gather(y[:,i].reshape(-1,1),0,pred_True_target_True_index.reshape(-1,1)).sum()
+                        
+                            pred_False_target_True=torch.gather(1-y[:,i].reshape(-1,1),0,pred_False_target_True_index.reshape(-1,1)).sum()
+                        
+                            recall=pred_True_target_True/(pred_True_target_True+pred_False_target_True)
+                        
+                        f1_score_sum+=2*recall*precision/(recall+precision)
+                    
+                '''
+                one_hot_tr_y=tensor(np.eye(11)[train_y[train_index]])
+                
+                cross_loss=-((one_hot_tr_y*((y+1e-8).log())).sum(axis=1)).mean()
+                    
+                '''
+                    
+                
+                        
+                if n_loss!=0:
+                    
+                    f1_macro=f1_score_sum/11
+                
+                
+                    
+                    optim.zero_grad()
+                    
+                    loss=-f1_macro
+                    
+                    loss.backward()
+                    
+                    optim.step()
+            
+                
+            model.eval()
+            
+            tr_f_score=f1_score(train_y[train_index],model(tr_x.float()).argmax(dim=1).detach().numpy(),
+            average='macro')
+            
+            val_f_score=f1_score(train_y[val_index],model(val_x.float()).argmax(dim=1).detach().numpy(),
+            average='macro')
+            
+            if epoch%20==0:
+                #print(cross_loss)
+                print(epoch,f1_macro.detach().numpy().tolist(),n_loss,'tr_f_score:'+str(tr_f_score)+' val_f_score:'+str(val_f_score))
+            
+            a_model_f.append(val_f_score)
+            
+        
+            
+                
+        print('===========')
+            
+        max_f=max(a_model_f)
+        
+        val_f.append(max_f)
+        
+        output_x[val_index]=model(val_x.float()).detach().numpy()
+        
+        preds+=model(test_x.float()).detach().numpy()
+        
+    df_train_y=pd.DataFrame(output_x)
+    df_preds=pd.DataFrame(preds/n_fold)
+    
+    df_train_y.to_csv('/Users/nakaharakan/Documents/signate_music/models/macroNN/simpleNN'+str(data_ver)+'/'+str(data_ver)+'macroNN_train_x.csv',index=False)
+    df_preds.to_csv('/Users/nakaharakan/Documents/signate_music/models/macroNN/simpleNN'+str(data_ver)+'/'+str(data_ver)+'macroNN_test_x.csv',index=False)
+
+        
+    print(val_f,sum(val_f)/len(val_f))
+    
+    return preds
+    
+    
+def ave_sol(n=int()):
+    
+    preds=np.zeros((4046,11))
+    
+    for i in range(n):
+        
+        preds+=CV2csv(10)
+        
+    preds=preds.argmax(axis=1)
+    
+    
+    
+    sol=pd.DataFrame({'id':[i+4046 for i in range(4046)],'ans':preds})
+    
+    sol['ans']=sol['ans'].map(lambda x:int(x))
+    
+    sol.to_csv('/Users/nakaharakan/Documents/signate_music/models/simpleNN/simpleNN'+str(data_ver)+'/'+str(data_ver)+'simpleNN.csv',index=False,header=False)
+    
+    return sol
+
+
+                
+        
+                
+                
+            
+            
+            
+            
+            
+            
+            
+            
+            
